@@ -62,7 +62,7 @@ class SetupDBPage:
                 f.write(f'SUPABASE_URL={url}\n')
                 f.write(f'SUPABASE_KEY={key}\n')
                 f.close()
-                show_message(page, self.success_snackbar, 'You successfully connected to database!')
+                show_message(page, self.success_snackbar, 'You successfully connected to database! Please restart the app.')
         except Exception as error:
             show_message(page, self.error_snackbar, f"Connecting failed: {str(error)}")
 

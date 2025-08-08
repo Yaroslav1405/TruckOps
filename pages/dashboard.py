@@ -1,24 +1,27 @@
 # Imports
 import flet as ft 
 from flet_route import Params, Basket
-from config import supabase
 from assets.styles import *
 import pandas as pd
 import datetime
 import math
-from helper_functions import show_message, create_snackbar, create_logo, create_sidebar, add_load, create_header
+from helper_functions import NewLoad, show_message, create_snackbar, create_logo, create_sidebar, create_header
+from storage.session import SessionManager
 
 
 class DispatcherMain:
-    def __init__(self):
+    def __init__(self, supabase, page):
         self.error_snackbar = create_snackbar(ft.Colors.RED_600)
         self.success_snackbar = create_snackbar(ft.Colors.GREEN_600)
         self.supabase = supabase
-    
+        self.page = page
+        self.user_id = SessionManager.get_user_id(page)
+
+
     
     # Create Chart Function
-    def create_weekly_chart(self, agg_function, left_axis_label_func, stroke_color, title):
-        res = self.supabase.table('Loads').select(
+    async def create_weekly_chart(self, agg_function, left_axis_label_func, stroke_color, title):
+        res = await self.supabase.table('Loads').select(
             'date, total_rate'
         ).gte(
             'date', str(self.this_monday)
@@ -112,7 +115,23 @@ class DispatcherMain:
             spacing=10),
         )
         
+    # Define Load Count
+    async def count_loads(self, this_monday, next_monday):
+        n_loads = await self.supabase.table('Loads').select('*', count='exact').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
+        return n_loads.count
+
+    # Define Rate Sum
+    async def sum_weekly_rate(self, this_monday, next_monday):
+        res = await self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
+        return sum(row['total_rate'] for row in res.data if row['total_rate'] is not None)
     
+    
+    # Define Rate Sum
+    async def top_rate(self, this_monday, next_monday):
+        rates = await self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
+        return max([row['total_rate'] for row in rates.data if row['total_rate'] is not None], default=0)
+    
+        
     # Define Page View
     def view(self, page: ft.Page, params: Params, basket: Basket):
         
@@ -124,41 +143,41 @@ class DispatcherMain:
         page.fonts = {'lato-bold': 'assets/Lato-Bold.ttf', 'lato-regular': 'assets/Lato-Regular.ttf',
                       'lato-light': 'assets/Lato-Light.ttf'}
         
-        # Retrieve Values from Client Storage
-        self.user_id = page.client_storage.get('user_id')
-        access_token = page.client_storage.get('access_token')
-        refresh_token = page.client_storage.get('refresh_token')
-        
-        # Log out User if not Logged in
-        if not access_token or not refresh_token or not self.user_id:
-            show_message(page, self.error_snackbar, "Session expired. Please log in again.")
-            page.go('/')
-            return
-        
+        if not SessionManager.require_auth(page):
+            return ft.View('/dashboard', bgcolor=defaultBackgroundColor, controls=[ft.Text("Redirecting to login...")])
+
         
         today = datetime.date.today()
         date_since_monday = today.weekday()
         self.this_monday = today - datetime.timedelta(days=date_since_monday)
         self.next_monday = self.this_monday + datetime.timedelta(days=7)
-        
-        
-        # Define Load Count
-        def count_loads(self, this_monday, next_monday):
-            n_loads = self.supabase.table('Loads').select('*', count='exact').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-            return n_loads.count
-        
-    
-        # Define Rate Sum
-        def sum_weekly_rate(self, this_monday, next_monday):
-            res = self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-            return sum(row['total_rate'] for row in res.data if row['total_rate'] is not None)
-        
-        
-        # Define Rate Sum
-        def top_rate(self, this_monday, next_monday):
-            rates = self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-            return max([row['total_rate'] for row in rates.data if row['total_rate'] is not None], default=0)
             
+            
+        # Create loading placeholders for stats
+        total_loads_text = ft.Text('Loading...', color=defaultFontColor, size=statsFontsize, font_family='lato-bold')
+        total_rate_text = ft.Text('Loading...', color=defaultFontColor, size=statsFontsize, font_family='lato-bold')
+        top_rate_text = ft.Text('Loading...', color=defaultFontColor, size=statsFontsize, font_family='lato-bold')
+        
+        # Create loading placeholders for charts
+        chart1_container = ft.Container(
+            expand=5,
+            height=300,
+            padding=30,
+            content=ft.Column([
+                ft.Text('Daily Total Rate (Current Week)', font_family='lato-bold', size=20),
+                ft.ProgressRing()
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER)
+        )
+        
+        chart2_container = ft.Container(
+            expand=5,
+            height=300,
+            padding=30,
+            content=ft.Column([
+                ft.Text('Daily Load Volume (Current Week)', font_family='lato-bold', size=20),
+                ft.ProgressRing()
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER)
+        )
         
         # Weekly Statistics Container
         weekly_stats = ft.Container(
@@ -175,7 +194,7 @@ class DispatcherMain:
                         content = ft.Column(
                             controls = [    
                                 ft.Text('Total Loads This Week', color = defaultFontColor, size=bodyFontSize, font_family='lato-light'),
-                                ft.Text(count_loads(self, self.this_monday, self.next_monday), color = defaultFontColor, size=statsFontsize, font_family='lato-bold'),
+                                total_loads_text,
                             ],
                             alignment = ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER
@@ -189,7 +208,7 @@ class DispatcherMain:
                         content = ft.Column(
                             controls = [    
                                 ft.Text('Total Rate This Week', color = defaultFontColor, size=bodyFontSize, font_family='lato-light'),
-                                ft.Text(f'$ {sum_weekly_rate(self, self.this_monday, self.next_monday)}', color = defaultFontColor, size=statsFontsize, font_family='lato-bold'),
+                                total_rate_text,
                             ],
                             alignment = ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER
@@ -203,7 +222,7 @@ class DispatcherMain:
                         content = ft.Column(
                             controls = [    
                                 ft.Text('Top Rate of This Week', color = defaultFontColor, size=bodyFontSize, font_family='lato-light'),
-                                ft.Text(f'$ {top_rate(self, self.this_monday, self.next_monday)}', color = defaultFontColor, size=statsFontsize, font_family='lato-bold'),
+                                top_rate_text,
                             ],
                             alignment = ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER
@@ -228,7 +247,49 @@ class DispatcherMain:
             )
         )
         
+        # Async function to load data
+        async def load_dashboard_data():
+            try:
+                print(f"Loading dashboard data for user: {self.user_id}")
+                
+                # Load stats
+                total_loads = await self.count_loads(self.this_monday, self.next_monday)
+                total_rate = await self.sum_weekly_rate(self.this_monday, self.next_monday)
+                top_rate_value = await self.top_rate(self.this_monday, self.next_monday)
+                
+                # Update stats
+                total_loads_text.value = str(total_loads)
+                total_rate_text.value = f'$ {total_rate:,.0f}'
+                top_rate_text.value = f'$ {top_rate_value:,.0f}'
+                
+                # Update charts
+                chart1 = await self.create_weekly_chart('sum', lambda y: f"${int(y/1000)}k", ft.Colors.TEAL, 'Daily Total Rate (Current Week)')
+                chart2 = await self.create_weekly_chart('count', lambda y: f"{int(y)}", ft.Colors.BLUE, 'Daily Load Volume (Current Week)')
+                
+                # Replace chart containers
+                chart1_container.content = chart1.content
+                chart2_container.content = chart2.content
+                
+                # Update the page
+                page.update()
+                print("Dashboard data loaded successfully")
+                
+            except Exception as e:
+                print(f"Error loading dashboard data: {e}")
+                total_loads_text.value = "Error"
+                total_rate_text.value = "Error"
+                top_rate_text.value = "Error"
+                page.update()
+        
+        # Start loading data asynchronously
+        page.run_task(load_dashboard_data)
 
+
+        async def handle_add_load_click(e):
+            load_dialog = NewLoad(page=self.page)
+            load_dialog.open_bottom_sheet(e)
+
+        # Return the view immediately (with loading placeholders)
         return ft.View(
             '/dashboard',
             bgcolor = defaultBackgroundColor,
@@ -260,14 +321,15 @@ class DispatcherMain:
                             expand = 9,
                             content = ft.Column(
                                 controls = [
-                                    create_header('Dashboard', add_load(self, page)),
+                                    create_header('Dashboard', add_load_function=handle_add_load_click),
+                                    # create_header('Dashboard', add_load(self, page)),
                                     ft.Divider(),
                                     weekly_stats,
                                     ft.Row(
                                         expand=8,
                                         controls = [
-                                            self.create_weekly_chart('sum', lambda y: f"${int(y/1000)}k", ft.Colors.TEAL, 'Daily Total Rate (Current Week)'),
-                                            self.create_weekly_chart('count', lambda y: f"{int(y)}", ft.Colors.BLUE, 'Daily Load Volume (Current Week)')
+                                            chart1_container,
+                                            chart2_container
                                         ]
                                     )
                                 ],
@@ -278,5 +340,3 @@ class DispatcherMain:
                 )        
             ]
         )
-    
-    

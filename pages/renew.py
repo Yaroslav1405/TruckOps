@@ -5,7 +5,7 @@ from assets.styles import *
 from helper_functions import show_message, validate_email, create_snackbar, create_logo
 
 class RenewCredentials:
-    def __init__(self):
+    def __init__(self, supabase):
         self.supabase = supabase
         self.error_snackbar = create_snackbar(ft.Colors.RED_600)
         self.success_snackbar = create_snackbar(ft.Colors.GREEN_600)

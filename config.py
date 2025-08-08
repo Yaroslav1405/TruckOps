@@ -1,22 +1,37 @@
 import os
-from supabase import create_client, Client
+from supabase import acreate_client, AsyncClient
 from dotenv import load_dotenv
 from supabase._sync.client import SupabaseException
 
 load_dotenv()
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL: str = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY")
 
-supabase: Client | None = None
-db_init_successful = False
 
-if SUPABASE_URL and SUPABASE_KEY:
+supabase: AsyncClient | None = None
+db_init_successful: bool = False
+
+
+async def create_supabase():
+    # Define global variables
+    global supabase, db_init_successful
+    
+    # Check for environment variables
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("Supabase URL or Key not set in environment variables.")
+        supabase = None
+        db_init_successful = False
+        return
+    
+    # Initialize Supabase client
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
         db_init_successful = True
     except SupabaseException as e:
         db_init_successful = False
     except Exception as e:
         db_init_successful = False
-else:
-    db_init_successful = False
+        
+def get_supabase_client():
+    return supabase
+        

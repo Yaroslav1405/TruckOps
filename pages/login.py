@@ -1,4 +1,5 @@
 # Imports
+import asyncio
 import os
 import flet as ft
 #from config import supabase
@@ -9,7 +10,7 @@ from helper_functions import show_message, validate_email, create_snackbar, crea
 
 
 class LoginPage:
-    def __init__(self):
+    def __init__(self, supabase):
         self.supabase = supabase
         self.error_snackbar = create_snackbar(ft.Colors.RED_600)
         self.success_snackbar = create_snackbar(ft.Colors.GREEN_600)
@@ -54,12 +55,13 @@ class LoginPage:
 
 
     # Define Login Function
-    def login(self, e, page):
-        # Retrieve Values from Inputs 
+    async def login(self, e, page: ft.Page):
+        # Access the page object from the event
+        print(f'Retrieving session data if available...')
+
         email = self.login_input.content.value
         password = self.password_input.content.value
 
-        # Validators
         if not email or not password:
             show_message(page, self.error_snackbar, 'Please enter email and password.')
             return
@@ -68,24 +70,34 @@ class LoginPage:
             show_message(page, self.error_snackbar, "Please enter a valid email address.")
             return
 
-
-        # Define Reset Form
         def reset_form():
             self.password_input.content.value = ''
 
-        # Log in User if Success
         try:
-            response = self.supabase.auth.sign_in_with_password({'email': email, 'password': password})
+            print('Attempting to log in...')
+            response = await self.supabase.auth.sign_in_with_password({'email': email, 'password': password})
             session = response.session
             user_id = response.user.id
-            page.client_storage.set('user_id', user_id)
-            page.client_storage.set('access_token', session.access_token)
-            page.client_storage.set('refresh_token', session.refresh_token)
+            print(f"✅ Supabase auth successful for user: {user_id}")
+            page.session.set('user_id', user_id)
+            page.session.set('access_token', session.access_token)
+            page.session.set('refresh_token', session.refresh_token)
+            print(f"User ID: {page.session.get('user_id')}")
+            print(f"✅ Session data stored successfully")
+            # TEMP SOLLUTION
+            with open('storage/session.txt', 'w') as f:
+                f.write(f'ACCESS_TOKEN={session.access_token}\n')
+                f.write(f'REFRESH_TOKEN={session.refresh_token}\n')
+                f.write(f'U_ID={user_id}\n')
+                f.close()
+            print(f'Session data stored in file.')
             reset_form()
-            page.go('/dashboard')  
+            page.go('/dashboard')
         except Exception as error:
             show_message(page, self.error_snackbar, "Login failed: Invalid credentials.")
+            print(f"Login error: {error}")
 
+            
 
     # Define Page View
     def view(self, page: ft.Page, params: Params, basket: Basket):
@@ -98,6 +110,23 @@ class LoginPage:
                       'lato-light': 'assets/Lato-Light.ttf'}
         page.snack_bar = self.error_snackbar
         
+        async def login_wrapper(e):
+            # Show loading state
+            login_button.content = ft.ProgressRing(width=20, height=20, color=defaultFontColor)
+            login_button.update()
+            
+            try:
+                await self.login(e, page)
+            finally:
+                # Restore button text
+                login_button.content = ft.Text(
+                    'Login', 
+                    color=defaultFontColor,
+                    font_family='lato-light',
+                    size=buttonFontSize
+                )
+                login_button.update()
+        
         # Define Login Button
         login_button = ft.Container(
             ft.Text(
@@ -106,7 +135,7 @@ class LoginPage:
                 font_family='lato-light',
                 size = buttonFontSize
             ),
-            on_click = lambda e: self.login(e, page),
+            on_click = login_wrapper,
             width = 300,
             height = 40,
             alignment = ft.alignment.center,
