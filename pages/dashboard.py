@@ -5,7 +5,7 @@ from assets.styles import *
 import pandas as pd
 import datetime
 import math
-from helper_functions import NewLoad, show_message, create_snackbar, create_logo, create_sidebar, create_header
+from helper_functions import NewLoad, create_snackbar, create_logo, create_sidebar, create_header
 from storage.session import SessionManager
 
 
@@ -16,25 +16,15 @@ class DispatcherMain:
         self.supabase = supabase
         self.page = page
         self.user_id = SessionManager.get_user_id(page)
-
+        self.access_token = SessionManager.get_access_token(page)
 
     
     # Create Chart Function
-    async def create_weekly_chart(self, agg_function, left_axis_label_func, stroke_color, title):
-        res = await self.supabase.table('Loads').select(
-            'date, total_rate'
-        ).gte(
-            'date', str(self.this_monday)
-        ).lt(
-            'date', str(self.next_monday)
-        ).eq(
-            'dispatcher_name', self.user_id
-        ).execute()
-
+    async def create_weekly_chart(self, loads_data, agg_function, left_axis_label_func, stroke_color, title):
         empty_data = {'date': [], 'total_rate': []}
         df = pd.DataFrame(empty_data)
 
-        df = pd.concat([df, pd.DataFrame(res.data)], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(loads_data)], ignore_index=True)
 
         # Data Manipulation
         df['date'] = pd.to_datetime(df['date'])
@@ -116,20 +106,35 @@ class DispatcherMain:
         )
         
     # Define Load Count
-    async def count_loads(self, this_monday, next_monday):
-        n_loads = await self.supabase.table('Loads').select('*', count='exact').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-        return n_loads.count
+    async def count_loads(self, loads_data):
+        return len(loads_data)
+    
+    
+    # Fetch all weekly loads for the user
+    async def fetch_weekly_loads(self, this_monday, next_monday):
+        self.supabase.postgrest.auth(self.access_token)
+        res = await self.supabase.table('Loads').select(
+            '*').gte(
+                'date', str(this_monday)
+            ).lt(
+                'date', str(next_monday)
+            ).eq(
+                'dispatcher_name', self.user_id
+            ).execute()
+        return res.data
 
-    # Define Rate Sum
-    async def sum_weekly_rate(self, this_monday, next_monday):
-        res = await self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-        return sum(row['total_rate'] for row in res.data if row['total_rate'] is not None)
     
     
     # Define Rate Sum
-    async def top_rate(self, this_monday, next_monday):
-        rates = await self.supabase.table('Loads').select('total_rate').gte('date', str(this_monday)).lt('date', str(next_monday)).eq('dispatcher_name', self.user_id).execute()    
-        return max([row['total_rate'] for row in rates.data if row['total_rate'] is not None], default=0)
+    async def sum_weekly_rate(self, loads_data):
+        return sum(row['total_rate'] for row in loads_data if row['total_rate'] is not None)
+    
+    
+    # Define Rate Sum
+    async def top_rate(self, loads_data):
+        return max([row['total_rate'] for row in loads_data if row['total_rate'] is not None], default=0)
+    
+    
     
         
     # Define Page View
@@ -253,9 +258,11 @@ class DispatcherMain:
                 print(f"Loading dashboard data for user: {self.user_id}")
                 
                 # Load stats
-                total_loads = await self.count_loads(self.this_monday, self.next_monday)
-                total_rate = await self.sum_weekly_rate(self.this_monday, self.next_monday)
-                top_rate_value = await self.top_rate(self.this_monday, self.next_monday)
+                loads_data = await self.fetch_weekly_loads(self.this_monday, self.next_monday)
+                total_loads = await self.count_loads(loads_data)
+                total_rate = await self.sum_weekly_rate(loads_data)
+                top_rate_value = await self.top_rate(loads_data)
+
                 
                 # Update stats
                 total_loads_text.value = str(total_loads)
@@ -263,8 +270,8 @@ class DispatcherMain:
                 top_rate_text.value = f'$ {top_rate_value:,.0f}'
                 
                 # Update charts
-                chart1 = await self.create_weekly_chart('sum', lambda y: f"${int(y/1000)}k", ft.Colors.TEAL, 'Daily Total Rate (Current Week)')
-                chart2 = await self.create_weekly_chart('count', lambda y: f"{int(y)}", ft.Colors.BLUE, 'Daily Load Volume (Current Week)')
+                chart1 = await self.create_weekly_chart(loads_data, 'sum', lambda y: f"${int(y/1000)}k", ft.Colors.TEAL, 'Daily Total Rate (Current Week)')
+                chart2 = await self.create_weekly_chart(loads_data, 'count', lambda y: f"{int(y)}", ft.Colors.BLUE, 'Daily Load Volume (Current Week)')
                 
                 # Replace chart containers
                 chart1_container.content = chart1.content
@@ -322,7 +329,6 @@ class DispatcherMain:
                             content = ft.Column(
                                 controls = [
                                     create_header('Dashboard', add_load_function=handle_add_load_click),
-                                    # create_header('Dashboard', add_load(self, page)),
                                     ft.Divider(),
                                     weekly_stats,
                                     ft.Row(
