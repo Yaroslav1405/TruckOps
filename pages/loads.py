@@ -145,8 +145,11 @@ class MyLoads:
             
         page.run_task(load_data)
         
-        # load_dialog = NewLoad(page, self.refresh_table)
-        load_dialog = NewLoad(page, load_data)
+        
+        async def handle_add_load_click(e):
+            load_dialog = NewLoad(page, load_data)
+            load_dialog.open_bottom_sheet(e)
+            
         return ft.View(
             '/loadsPage',
             bgcolor = defaultBackgroundColor,
@@ -177,8 +180,7 @@ class MyLoads:
                             expand = 9,
                             content = ft.Column(
                                         controls = [
-                                            create_header('Loads', load_dialog.get_handler()),
-                                            # create_header('Loads', self.new_load),
+                                            create_header('Loads', add_load_function=handle_add_load_click),
                                             ft.Divider(),
                                             ft.Container(
                                                 content = loads_table,

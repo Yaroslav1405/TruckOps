@@ -6,10 +6,11 @@ from helper_functions import show_message, create_snackbar, create_logo
 
 
 class SetupDBPage:
-    def __init__(self):
+    def __init__(self, router=None):
         self.error_snackbar = create_snackbar(ft.Colors.RED_600)
         self.success_snackbar = create_snackbar(ft.Colors.GREEN_600)
-    
+        self.router = router
+        
     # Define Greeting Text
     welcome_text = ft.Container(
         content=ft.Text(
@@ -46,15 +47,17 @@ class SetupDBPage:
         border_radius = 15,
     )
     
-    def connect(self, e, page):
+    async def connect(self, e, page):
         # Retrieve Values from Inputs 
         url = self.url_input.content.value
         key = self.key_input.content.value
+
 
         # Validators 
         if not url or not key:
             show_message(page, self.error_snackbar, 'Please fill in all fields.')
             return
+        
         # Register User if Success
         try:
             env_file_path = '.env'
@@ -62,9 +65,46 @@ class SetupDBPage:
                 f.write(f'SUPABASE_URL={url}\n')
                 f.write(f'SUPABASE_KEY={key}\n')
                 f.close()
-                show_message(page, self.success_snackbar, 'You successfully connected to database! Please restart the app.')
+            
+            """============================================"""
+            if self.router:
+                reinitializator = await self.router.reinitialize_routes()
+                if reinitializator:
+                    show_message(page, self.success_snackbar, 'You successfully connected to database! You can login now.')
+                    print("Routes reinitialized successfully.")
+                else:
+                    show_message(page, self.error_snackbar, 'Failed to connect to database with provided credentials.')
+                    print("Failed to reinitialize routes.")
+            else:
+                show_message(page, self.success_snackbar, 'Environment file updated. Please restart the app to apply changes.')
+            """============================================"""
+
         except Exception as error:
-            show_message(page, self.error_snackbar, f"Connecting failed: {str(error)}")
+            show_message(page, self.error_snackbar, f"Failed to connect to database.")
+            print(f"Connecting failed: {str(error)}")
+    # def connect(self, e, page):
+    #     # Retrieve Values from Inputs 
+    #     url = self.url_input.content.value
+    #     key = self.key_input.content.value
+
+    #     # Validators 
+    #     if not url or not key:
+    #         show_message(page, self.error_snackbar, 'Please fill in all fields.')
+    #         return
+        
+    #     # Register User if Success
+    #     try:
+    #         env_file_path = '.env'
+    #         with open(env_file_path, 'w') as f:
+    #             f.write(f'SUPABASE_URL={url}\n')
+    #             f.write(f'SUPABASE_KEY={key}\n')
+    #             f.close()
+    #             show_message(page, self.success_snackbar, 'You successfully connected to database! Please restart the app.')
+            
+        
+    #     except Exception as error:
+    #         show_message(page, self.error_snackbar, f"Failed to connect to database.")
+    #         print(f"Connecting failed: {str(error)}")
 
     
     # Define Page View
@@ -86,7 +126,7 @@ class SetupDBPage:
                 size = buttonFontSize,
                 font_family='lato-light',
             ),
-            on_click = lambda e: self.connect(e, page),
+            on_click = lambda e: page.run_task(self.connect, e, page),
             width = 300,
             height = 40,
             alignment = ft.alignment.center,
